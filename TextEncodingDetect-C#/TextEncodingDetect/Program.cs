@@ -16,63 +16,168 @@
 
 using System;
 using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 using AutoIt.Common;
 
 public class Program
 {
     public static int Main(string[] args)
     {
-        Console.WriteLine();
-
         if (args.Length != 1)
         {
-            Console.WriteLine("Usage: TextEncodingDetect.exe <filename>");
+            Console.WriteLine("Usage: TextEncodingDetect.exe <filename>|<dirname>");
             return 1;
         }
 
+        // find docs -not -type d -exec "C:\Users\wakau\source\repos\text-encoding-detect\TextEncodingDetect-C#\TextEncodingDetect\bin\Debug\TextEncodingDetect.exe" "{}" ";"
+        // "C:\Users\wakau\source\repos\text-encoding-detect\TextEncodingDetect-C#\TextEncodingDetect\bin\Debug\TextEncodingDetect.exe" .
+
+        if (Directory.Exists(args[0]))
+        {
+            var files = Directory.GetFiles(args[0], "*", SearchOption.AllDirectories);
+
+            foreach (var file in files)
+            {
+                if (file.Contains(Path.DirectorySeparatorChar + "."))
+                {
+                    continue;
+                }
+                ShowResult(file);
+            }
+        }
+        else
+        {
+            ShowResult(args[0]);
+        }
+
+        return 0;
+    }
+
+    private static void ShowResult(string filename, bool showPerfect = false)
+    {
+        var result = GetFileState(filename);
+
+        if (!showPerfect && (result.Lines == result.CRLFs || result.Lines == result.LFs))
+        {
+            return;
+        }
+
+        Console.WriteLine($"File: {filename}");
+        Console.WriteLine($"Encoding: {result.Encoding}");
+        Console.WriteLine($"Lines: {result.Lines}\tCRLF: {result.CRLFs}\tLF: {result.LFs}");
+        if (result.Lines == result.CRLFs || result.Lines == result.LFs)
+        {
+            Console.WriteLine($"Result: PERFECT!");
+        }
+        else
+        {
+            Console.WriteLine($"Result: INCONSISTENCE!!!!!!!!!!!!!");
+        }
+        Console.WriteLine();
+    }
+
+    public class FileStateModel
+    {
+        public TextEncodingDetect.Encoding Encoding { get; set; }
+        public int Lines { get; set; }
+        public int CRLFs { get; set; }
+        public int LFs { get; set; }
+    }
+
+    public static FileStateModel GetFileState(string filename)
+    {
         // Read in the file in binary
         byte[] buffer;
 
         try
         {
-            buffer = File.ReadAllBytes(args[0]);
+            buffer = File.ReadAllBytes(filename);
         }
         catch (Exception ex)
         {
             Console.WriteLine(ex.Message);
-            return 1;
+            throw ex;
         }
 
         // Detect encoding
         var textDetect = new TextEncodingDetect();
         TextEncodingDetect.Encoding encoding = textDetect.DetectEncoding(buffer, buffer.Length);
 
-        Console.Write("Encoding: ");
+        string str = "";
+
+        StringBuilder sb = new StringBuilder();
+
+        //sb.AppendLine("File: " + filename);
+
+        //sb.Append("Encoding: ");
         if (encoding == TextEncodingDetect.Encoding.None)
         {
-            Console.WriteLine("Binary");
+            //sb.AppendLine("Binary");
         }
         else if (encoding == TextEncodingDetect.Encoding.Ascii)
         {
-            Console.WriteLine("ASCII (chars in the 0-127 range)");
+            str = Encoding.ASCII.GetString(buffer);
+            //sb.AppendLine("ASCII (chars in the 0-127 range)");
         }
         else if (encoding == TextEncodingDetect.Encoding.Ansi)
         {
-            Console.WriteLine("ANSI (chars in the range 0-255 range)");
+            str = Encoding.Default.GetString(buffer);
+            //sb.AppendLine("ANSI (chars in the range 0-255 range)");
         }
         else if (encoding == TextEncodingDetect.Encoding.Utf8Bom || encoding == TextEncodingDetect.Encoding.Utf8Nobom)
         {
-            Console.WriteLine("UTF-8");
+            str = Encoding.UTF8.GetString(buffer);
+            //sb.AppendLine("UTF-8");
         }
         else if (encoding == TextEncodingDetect.Encoding.Utf16LeBom || encoding == TextEncodingDetect.Encoding.Utf16LeNoBom)
         {
-            Console.WriteLine("UTF-16 Little Endian");
+            str = Encoding.Unicode.GetString(buffer);
+            //sb.AppendLine("UTF-16 Little Endian");
         }
         else if (encoding == TextEncodingDetect.Encoding.Utf16BeBom || encoding == TextEncodingDetect.Encoding.Utf16BeNoBom)
         {
-            Console.WriteLine("UTF-16 Big Endian");
+            str = Encoding.BigEndianUnicode.GetString(buffer);
+            //sb.AppendLine("UTF-16 Big Endian");
         }
 
-        return 0;
+        int All_Lines = 0;
+        int CRLF_Count = 0;
+        int LF_Count = 0;
+
+        if (encoding != TextEncodingDetect.Encoding.None)
+        {
+            All_Lines = LineBreakCount(str);
+            CRLF_Count = LineBreakCount(str, new[] { "\r\n" });
+            LF_Count = All_Lines - CRLF_Count;
+
+            //sb.AppendLine(
+            //    "Length: " + str.Length + "\t" +
+            //    "Lines: " + All_Lines + "\t" +
+            //    "CRLF: " + CRLF_Count + "\t" +
+            //    "  LF: " + (LF_Count));
+        }
+
+        return new FileStateModel()
+        {
+            Encoding = encoding,
+            Lines = All_Lines,
+            CRLFs = CRLF_Count,
+            LFs = LF_Count
+        };
+    }
+
+    public static int LineBreakCount(string s)
+    {
+        if (s == null) throw new ArgumentNullException("s");
+
+        return LineBreakCount(s, new[] { "\r\n", "\r", "\n" });
+    }
+    public static int LineBreakCount(string s, params string[] patterns)
+    {
+        if (s == null) throw new ArgumentNullException("s");
+        if (patterns == null) throw new ArgumentNullException("patterns");
+
+        return s.Split(patterns, StringSplitOptions.None).Length - 1;
     }
 }
